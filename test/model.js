@@ -306,9 +306,9 @@
 
   QUnit.test('nested set triggers with the correct options', function(assert) {
     var model = new Backbone.Model();
-    var o1 = {};
-    var o2 = {};
-    var o3 = {};
+    var o1 = {name:'01'};
+    var o2 = {name:'02'};
+    var o3 = {name:'03'};
     model.on('change', function(__, options) {
       switch (model.get('a')) {
         case 1:

@@ -73,7 +73,7 @@
   //
   // collection.filter(function(model) { return model.get('age') > 10 });
   // collection.each(this.addView);
-  //
+  // 因为使用apply会导致执行慢，所以修改为确定参数的模式
   // `Function#apply` can be slow so we use the method's arg count, if we know it.
   var addMethod = function(length, method, attribute) {
     switch (length) {
@@ -96,12 +96,13 @@
       };
     }
   };
+  // 给backbone添加underscore方法
   var addUnderscoreMethods = function(Class, methods, attribute) {
     _.each(methods, function(length, method) {
       if (_[method]) Class.prototype[method] = addMethod(length, method, attribute);
     });
   };
-
+  // 统一处理回调函数
   // Support `collection.sortBy('attr')` and `collection.findWhere({id: 1})`.
   var cb = function(iteratee, instance) {
     if (_.isFunction(iteratee)) return iteratee;
@@ -110,7 +111,8 @@
     return iteratee;
   };
   var modelMatcher = function(attrs) {
-    var matcher = _.matches(attrs);
+    // 返回具有attrs的matchr
+    var matcher = _.matches(attrs);//生成具有参考属性的匹配器
     return function(model) {
       return matcher(model.attributes);
     };
@@ -170,7 +172,7 @@
       ctx: obj,
       listening: listening
     });
-
+    // 这里的`listening`只存在listenTo
     if (listening) {
       var listeners = obj._listeners || (obj._listeners = {});
       listeners[listening.id] = listening;
@@ -182,7 +184,10 @@
   // Inversion-of-control versions of `on`. Tell *this* object to listen to
   // an event in another object... keeping track of what it's listening to
   // for easier unbinding later.
+  // 这里的obj是另外的对象。
   Events.listenTo = function(obj, name, callback) {
+    // 回调函数依然缓存在this（_listeningTo）。而obj上存在id，方便取得对应的callback，进行执行。
+    // _listen
     if (!obj) return this;
     var id = obj._listenId || (obj._listenId = _.uniqueId('l'));
     var listeningTo = this._listeningTo || (this._listeningTo = {});
@@ -202,6 +207,7 @@
 
   // The reducing API that adds a callback to the `events` object.
   var onApi = function(events, name, callback, options) {
+
     if (callback) {
       var handlers = events[name] || (events[name] = []);
       var context = options.context, ctx = options.ctx, listening = options.listening;
@@ -308,7 +314,8 @@
   Events.once = function(name, callback, context) {
     // Map the event into a `{event: once}` object.
     var events = eventsApi(onceMap, {}, name, callback, _.bind(this.off, this));
-    if (typeof name === 'string' && context == null) callback = void 0;
+    // 函数如基本类型一样，赋值操作直接copy副本。
+    if (typeof name === 'string' && context == null) callback = void ;
     return this.on(events, callback, context);
   };
 
@@ -327,6 +334,7 @@
         offer(name, once);
         callback.apply(this, arguments);
       });
+      // 为啥要缓存这个，因为需要根据callback来进行删除
       once._callback = callback;
     }
     return map;
@@ -352,6 +360,7 @@
     if (objEvents) {
       var events = objEvents[name];
       var allEvents = objEvents.all;
+      // 只有在events存在时，才会触发`all`
       if (events && allEvents) allEvents = allEvents.slice();
       if (events) triggerEvents(events, args);
       if (allEvents) triggerEvents(allEvents, [name].concat(args));
@@ -398,11 +407,12 @@
     this.attributes = {};
     if (options.collection) this.collection = options.collection;
     if (options.parse) attrs = this.parse(attrs, options) || {};
-    var defaults = _.result(this, 'defaults');
+    var defaults = _.result(this, 'defaults');// defaults可以是函数
     attrs = _.defaults(_.extend({}, defaults, attrs), defaults);
     this.set(attrs, options);
     this.changed = {};
-    this.initialize.apply(this, arguments);
+    // 构建独立
+    this.initialize.apply(this, arguments);//绑定作用域
   };
 
   // Attach all inheritable methods to the Model prototype.
@@ -458,6 +468,7 @@
       return !!_.iteratee(attrs, this)(this.attributes);
     },
 
+    // 将set、unset、clear统一由set来完成
     // Set a hash of model attributes on the object, firing `"change"`. This is
     // the core primitive operation of a model, updating the data and notifying
     // anyone who needs to know about the change in state. The heart of the beast.
@@ -467,12 +478,13 @@
       // Handle both `"key", value` and `{key: value}` -style arguments.
       var attrs;
       if (typeof key === 'object') {
+        // 为啥这么处理，因为如果key是个对象，那么val其实就是options了
         attrs = key;
         options = val;
       } else {
         (attrs = {})[key] = val;
       }
-
+      // 默认处理
       options || (options = {});
 
       // Run validation.
@@ -482,7 +494,9 @@
       var unset      = options.unset;
       var silent     = options.silent;
       var changes    = [];
-      var changing   = this._changing;
+      var changing   = this._changing;//第一次是为undefined
+      // 还是不理解这个玩意，感觉在嵌套set时，有用
+      // 当对象正在被设置时，
       this._changing = true;
 
       if (!changing) {
@@ -497,12 +511,15 @@
       // For each `set` attribute, update or delete the current value.
       for (var attr in attrs) {
         val = attrs[attr];
+        // changes缓存修改过
         if (!_.isEqual(current[attr], val)) changes.push(attr);
+        // 存储修改的attr，为后面hasChanged、changedAttributes做准备
         if (!_.isEqual(prev[attr], val)) {
           changed[attr] = val;
         } else {
           delete changed[attr];
         }
+        // 执行赋值操作，如果是unset是操作，直接delete
         unset ? delete current[attr] : current[attr] = val;
       }
 
@@ -511,6 +528,8 @@
 
       // Trigger all relevant attribute changes.
       if (!silent) {
+        // 为什么要用_pending变量来存储options?
+        // _pending：未定|待定
         if (changes.length) this._pending = options;
         for (var i = 0; i < changes.length; i++) {
           this.trigger('change:' + changes[i], this, current[changes[i]], options);

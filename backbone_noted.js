@@ -393,19 +393,29 @@
   // is automatically generated and assigned for you.
   var Model = Backbone.Model = function(attributes, options) {
     var attrs = attributes || {};
+    // 为options添加默认值
     options || (options = {});
+    // 每个model都会有个'cid'
     this.cid = _.uniqueId(this.cidPrefix);
+    // 当前的attributes
     this.attributes = {};
+    // 如果options有存在collection，将其赋给this
     if (options.collection) this.collection = options.collection;
+    // 如果parse为true，会调用parse过滤。parse默认直接返回，可以根据实际情况来定制。
     if (options.parse) attrs = this.parse(attrs, options) || {};
+    // 使用_.result提供函数形式的返回结果
     var defaults = _.result(this, 'defaults');
+    // _.defaults会填充undefined项
     attrs = _.defaults(_.extend({}, defaults, attrs), defaults);
     this.set(attrs, options);
+    // 保存以修改{attrs:vals}
     this.changed = {};
+    // 定制特定的Modle
     this.initialize.apply(this, arguments);
   };
 
   // Attach all inheritable methods to the Model prototype.
+  // 扩展Model.prototype
   _.extend(Model.prototype, Events, {
 
     // A hash of attributes whose current and previous value differ.
@@ -461,55 +471,79 @@
     // Set a hash of model attributes on the object, firing `"change"`. This is
     // the core primitive operation of a model, updating the data and notifying
     // anyone who needs to know about the change in state. The heart of the beast.
+    // set、unset、clear方法，统一由set方法代理实现
     set: function(key, val, options) {
+      // 有如果key为null，直接返回this
       if (key == null) return this;
 
       // Handle both `"key", value` and `{key: value}` -style arguments.
+      // 处理参数
       var attrs;
+      // 如果key为对象，那么说明只有那个两个参数，所以需要将val赋值给options
       if (typeof key === 'object') {
         attrs = key;
         options = val;
       } else {
+        // 否则直接添加
         (attrs = {})[key] = val;
       }
-
+      // options默认值{}
       options || (options = {});
 
       // Run validation.
+      // 执行验证，如果验证返回false，直接退出
       if (!this._validate(attrs, options)) return false;
 
       // Extract attributes and options.
+      // 缓存attributes和options到局部变量中
+      // 
+      // unset选项：如果为true，会直接删除this.attributes对应的项
       var unset      = options.unset;
+      // slient选项：如果为true，如果attr有变化，会trigger对应的事件
       var silent     = options.silent;
+      // 收集变化的attrs，为后续的trigger对应的事件
       var changes    = [];
+      // changing表示当前的set还在执行中，这样做的目的：保证在set嵌套set中，只算一次change。
       var changing   = this._changing;
+      // 缓存下次的changing的状态
       this._changing = true;
-
+      // 如果当前是新的set(不包括嵌套的set)
       if (!changing) {
+        // 将当前的this.attributes缓存到this._previousAttributes中，为后续进行对比操作。
+        // 注意: 是新的set，不是嵌套中的set
         this._previousAttributes = _.clone(this.attributes);
+        // 重置已修改集合changed
         this.changed = {};
       }
-
+      // 缓存this.attributes、this.changed、this._previousAttributes到局部变量中，
+      // this.attributes用于进行对比操作
       var current = this.attributes;
       var changed = this.changed;
       var prev    = this._previousAttributes;
 
       // For each `set` attribute, update or delete the current value.
+      // 遍历attrs，更新或删除对应的attr
       for (var attr in attrs) {
+        // 获取对应的attr的值
         val = attrs[attr];
+        // 如果获取对应的修改的attr
         if (!_.isEqual(current[attr], val)) changes.push(attr);
+        // 获取已修改的集合，或更新changed
         if (!_.isEqual(prev[attr], val)) {
           changed[attr] = val;
         } else {
           delete changed[attr];
         }
+        // 如果unset为true，直接delete
         unset ? delete current[attr] : current[attr] = val;
       }
 
       // Update the `id`.
+      // 如果存在`id`则更新id
       if (this.idAttribute in attrs) this.id = this.get(this.idAttribute);
 
       // Trigger all relevant attribute changes.
+      // 触发所有相关的attribute事件
       if (!silent) {
         if (changes.length) this._pending = options;
         for (var i = 0; i < changes.length; i++) {
@@ -519,7 +553,10 @@
 
       // You might be wondering why there's a `while` loop here. Changes can
       // be recursively nested within `"change"` events.
+      // 如果changing为true，说明还在同一set中，直接返回this
       if (changing) return this;
+      // 为什么这里会是会进行循环呢？
+      // 因为可能存在set嵌套的set
       if (!silent) {
         while (this._pending) {
           options = this._pending;
@@ -527,28 +564,35 @@
           this.trigger('change', this, options);
         }
       }
+      // 将this._pending, this._changing置为false
       this._pending = false;
       this._changing = false;
+      // 返回当前model
       return this;
     },
 
     // Remove an attribute from the model, firing `"change"`. `unset` is a noop
     // if the attribute doesn't exist.
     unset: function(attr, options) {
+      // 将unset设置为true，通过set方法进行删除操作
       return this.set(attr, void 0, _.extend({}, options, {unset: true}));
     },
 
     // Clear all attributes on the model, firing `"change"`.
     clear: function(options) {
       var attrs = {};
+      // 将其this.attribute置为undefined
       for (var key in this.attributes) attrs[key] = void 0;
+      // 通过set方法进行删除操作
       return this.set(attrs, _.extend({}, options, {unset: true}));
     },
 
     // Determine if the model has changed since the last `"change"` event.
     // If you specify an attribute name, determine if that attribute has changed.
     hasChanged: function(attr) {
+      // 如果参数不存在，且需判断this.changed是否为空
       if (attr == null) return !_.isEmpty(this.changed);
+      // 判断this.changed是否包含attr
       return _.has(this.changed, attr);
     },
 
@@ -559,14 +603,18 @@
     // You can also pass an attributes object to diff against the model,
     // determining if there *would be* a change.
     changedAttributes: function(diff) {
+      // 如果没有参数，直接返回this.changed副本
       if (!diff) return this.hasChanged() ? _.clone(this.changed) : false;
+      // 如果this._changing为true（说明当前还在setting），返回当前最新的修改结合，否则直接返回上一次集合
       var old = this._changing ? this._previousAttributes : this.attributes;
+      // 已修改attrs集合
       var changed = {};
       for (var attr in diff) {
         var val = diff[attr];
         if (_.isEqual(old[attr], val)) continue;
         changed[attr] = val;
       }
+      // 如果存在变化的attrs，直接返回对应集合，否则直接返回false
       return _.size(changed) ? changed : false;
     },
 
@@ -586,6 +634,7 @@
     // Fetch the model from the server, merging the response with the model's
     // local attributes. Any changed attributes will trigger a "change" event.
     fetch: function(options) {
+      // options: 请求参数
       options = _.extend({parse: true}, options);
       var model = this;
       var success = options.success;
@@ -593,8 +642,10 @@
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
         if (!model.set(serverAttrs, options)) return false;
         if (success) success.call(options.context, model, resp, options);
+        // 如果请求成功，会触发一个‘sync’事件
         model.trigger('sync', model, resp, options);
       };
+      // 如果失败会触发一个`error`事件
       wrapError(this, options);
       return this.sync('read', this, options);
     },
@@ -603,6 +654,7 @@
     // If the server returns an attributes hash that differs, the model's
     // state will be `set` again.
     save: function(key, val, options) {
+      // 与set一样
       // Handle both `"key", value` and `{key: value}` -style arguments.
       var attrs;
       if (key == null || typeof key === 'object') {
@@ -613,6 +665,7 @@
       }
 
       options = _.extend({validate: true, parse: true}, options);
+      // 如果要等待服务器来设置新的attr，可以将其设置为true 
       var wait = options.wait;
 
       // If we're not waiting and attributes exist, save acts as
@@ -632,22 +685,30 @@
       options.success = function(resp) {
         // Ensure attributes are restored during synchronous saves.
         model.attributes = attributes;
+        // 返回存储的attributes: serverAttr
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
+        // 如果wait为true
         if (wait) serverAttrs = _.extend({}, attrs, serverAttrs);
+        // 将服务器返回的Attributes进行更新
         if (serverAttrs && !model.set(serverAttrs, options)) return false;
+        // 如果存在success函数则执行
         if (success) success.call(options.context, model, resp, options);
+        // 触发`sync`事件
         model.trigger('sync', model, resp, options);
       };
+      // error项处理
       wrapError(this, options);
 
       // Set temporary attributes if `{wait: true}` to properly find new ids.
+      // 如果wait: true，将先将attrs进行更新，为了找到正确的新id，获取正确的url及method
       if (attrs && wait) this.attributes = _.extend({}, attributes, attrs);
-
+      // 获取method，
       var method = this.isNew() ? 'create' : (options.patch ? 'patch' : 'update');
       if (method === 'patch' && !options.attrs) options.attrs = attrs;
+      // 发送请求
       var xhr = this.sync(method, this, options);
 
-      // Restore attributes.
+      // Restore attributes. 主要针对wait:true情况，保持attributes一致性
       this.attributes = attributes;
 
       return xhr;
@@ -674,6 +735,7 @@
       };
 
       var xhr = false;
+      // 是否保证已保存到服务器
       if (this.isNew()) {
         _.defer(options.success);
       } else {
@@ -756,8 +818,11 @@
     options || (options = {});
     if (options.model) this.model = options.model;
     if (options.comparator !== void 0) this.comparator = options.comparator;
+     // 重置状态：models、length、 byId
     this._reset();
+    // 初始化函数，一般用于定制
     this.initialize.apply(this, arguments);
+    // 如果models不为空, 调用reset，主要参数silent为true，表示初始化无需触发“change”
     if (models) this.reset(models, _.extend({silent: true}, options));
   };
 
@@ -766,6 +831,7 @@
   var addOptions = {add: true, remove: false};
 
   // Splices `insert` into `array` at index `at`.
+  // 插入指定数组
   var splice = function(array, insert, at) {
     at = Math.min(Math.max(at, 0), array.length);
     var tail = Array(array.length - at);
@@ -824,30 +890,33 @@
     // the core operation for updating the data contained by the collection.
     set: function(models, options) {
       if (models == null) return;
-
+      // setOptions = {add: true, remove: true, merge: true};
       options = _.extend({}, setOptions, options);
       if (options.parse && !this._isModel(models)) {
         models = this.parse(models, options) || [];
       }
-
+      // 如果不是数组
       var singular = !_.isArray(models);
       models = singular ? [models] : models.slice();
-
+      // 处理at, 参数是model在collection中位置，从1开始
+      // 可以是负数（等于最大长度与负数之和）
       var at = options.at;
+      // 这里+会将at进行Number转换
+      // 参考：http://javascript.ruanyifeng.com/grammar/conversion.html
       if (at != null) at = +at;
       if (at > this.length) at = this.length;
       if (at < 0) at += this.length + 1;
-
+      // 缓存集合变量
       var set = [];
       var toAdd = [];
       var toMerge = [];
       var toRemove = [];
       var modelMap = {};
-
+      // 获取add、merge、remove
       var add = options.add;
       var merge = options.merge;
       var remove = options.remove;
-
+      // 进行排序
       var sort = false;
       var sortable = this.comparator && at == null && options.sort !== false;
       var sortAttr = _.isString(this.comparator) ? this.comparator : null;
@@ -947,7 +1016,9 @@
         this._removeReference(this.models[i], options);
       }
       options.previousModels = this.models;
+      // 重置状态：models、length、 byId
       this._reset();
+      // 注意这里slient是为true，因为初次添加不需触发`change`
       models = this.add(models, _.extend({silent: true}, options));
       if (!options.silent) this.trigger('reset', this, options);
       return models;
@@ -1118,6 +1189,7 @@
 
     // Internal method called by both remove and set.
     _removeModels: function(models, options) {
+      // 要删除的models集合
       var removed = [];
       for (var i = 0; i < models.length; i++) {
         var model = this.get(models[i]);
@@ -1463,6 +1535,7 @@
   // Backbone.Router
   // ---------------
 
+  // 路由
   // Routers map faux-URLs to actions, and fire events when routes are
   // matched. Creating a new one sets its `routes` hash, if not set statically.
   var Router = Backbone.Router = function(options) {
@@ -1474,9 +1547,13 @@
 
   // Cached regular expressions for matching named param parts and splatted
   // parts of route strings.
+  // 'optional(/:item)': 'optionalItem'
   var optionalParam = /\((.*?)\)/g;
+  // named/optional/(?:y:z)?--->named/optional/(?:y([^/?]+))?
   var namedParam    = /(\(\?)?:\w+/g;
+  // decode/:named/*splat  
   var splatParam    = /\*\w+/g;
+  // 过滤正则表达式中特殊字符
   var escapeRegExp  = /[\-{}\[\]+?.,\\\^$|#\s]/g;
 
   // Set up all inheritable **Backbone.Router** properties and methods.
@@ -1493,15 +1570,22 @@
     //     });
     //
     route: function(route, name, callback) {
+      // 如果route不是正则表达式，将其转换正则
       if (!_.isRegExp(route)) route = this._routeToRegExp(route);
+      // 如果name是函数，将其赋值给callback
       if (_.isFunction(name)) {
         callback = name;
         name = '';
       }
+      // 如果name不是函数，从this获取对应的方法
       if (!callback) callback = this[name];
+      // 缓存当前的router
       var router = this;
+      // 通过history关联location，匹配路由
       Backbone.history.route(route, function(fragment) {
+        // 获取router中对应的参数
         var args = router._extractParameters(route, fragment);
+        // 仅在router.execute(callback, args, name)明确返回false时，才不会执行回调函数
         if (router.execute(callback, args, name) !== false) {
           router.trigger.apply(router, ['route:' + name].concat(args));
           router.trigger('route', name, args);
@@ -1616,6 +1700,7 @@
     // decoded for comparison. `%25` should not be decoded since it may be part
     // of an encoded parameter.
     decodeFragment: function(fragment) {
+      // 可能fragment含有`%25`，因为`%`转译为`25%`，所以需要将其转为`%2525`.
       return decodeURI(fragment.replace(/%25/g, '%2525'));
     },
 
@@ -1661,33 +1746,47 @@
 
       // Figure out the initial configuration. Do we need an iframe?
       // Is pushState desired ... is it available?
+      // 合并options
       this.options          = _.extend({root: '/'}, this.options, options);
+      // 设置root路径
       this.root             = this.options.root;
+      // 设置是否使用hashChange
       this._wantsHashChange = this.options.hashChange !== false;
+      //IE6.7及混杂模式下的IE8,不支持onhashchange事件，所以采用iframe+定时器模拟
       this._hasHashChange   = 'onhashchange' in window && (document.documentMode === void 0 || document.documentMode > 7);
+      // 是否使用hashChange
       this._useHashChange   = this._wantsHashChange && this._hasHashChange;
+      // 设置是否要使用pushState
       this._wantsPushState  = !!this.options.pushState;
+      // 检测是否支持pushState
       this._hasPushState    = !!(this.history && this.history.pushState);
+      // 是否使用pushState
       this._usePushState    = this._wantsPushState && this._hasPushState;
+      // 获取对应fragment(path | hash)
       this.fragment         = this.getFragment();
 
       // Normalize root to always include a leading and trailing slash.
+      // 方便拼接url，root:/root/
       this.root = ('/' + this.root + '/').replace(rootStripper, '/');
 
+      // 初始化状态
       // Transition from hashChange to pushState or vice versa if both are
       // requested.
+      // 如果同时进行hashChange和pushState，优先使用pushState
       if (this._wantsHashChange && this._wantsPushState) {
 
         // If we've started off with a route from a `pushState`-enabled
         // browser, but we're currently in a browser that doesn't support it...
+        // 如果当前不是在根路径且不支持pushState，就使用hashChange
         if (!this._hasPushState && !this.atRoot()) {
-          var rootPath = this.root.slice(0, -1) || '/';
+          var rootPath = this.root.slice(0, -1) || '/';// 去掉'/'
           this.location.replace(rootPath + '#' + this.getPath());
           // Return immediately as browser will do redirect to new url
           return true;
 
         // Or if we've started out with a hash-based route, but we're currently
         // in a browser where it could be `pushState`-based instead...
+        // 如果支持pushState，
         } else if (this._hasPushState && this.atRoot()) {
           this.navigate(this.getHash(), {replace: true});
         }
@@ -1697,6 +1796,8 @@
       // Proxy an iframe to handle location events if the browser doesn't
       // support the `hashchange` event, HTML5 history, or the user wants
       // `hashChange` but not `pushState`.
+      // 如果不支持hashChange，可以通过定时器frame来模拟：http://www.paciellogroup.com/blog/?p=604.
+      // 及参考：http://www.cnblogs.com/rubylouvre/archive/2012/10/24/2730599.html
       if (!this._hasHashChange && this._wantsHashChange && !this._usePushState) {
         this.iframe = document.createElement('iframe');
         this.iframe.src = 'javascript:0';
@@ -1717,6 +1818,7 @@
 
       // Depending on whether we're using pushState or hashes, and whether
       // 'onhashchange' is supported, determine how we check the URL state.
+      // 如果支持pushState
       if (this._usePushState) {
         addEventListener('popstate', this.checkUrl, false);
       } else if (this._useHashChange && !this.iframe) {
@@ -1795,11 +1897,14 @@
     // 'replace' option is passed. You are responsible for properly URL-encoding
     // the fragment in advance.
     //
+    //
     // The options object can contain `trigger: true` if you wish to have the
     // route callback be fired (not usually desirable), or `replace: true`, if
     // you wish to modify the current URL without adding an entry to the history.
+    // 
     navigate: function(fragment, options) {
       if (!History.started) return false;
+      // 兼容老版本写法：Backbone.history.navigate('search/manhattan/p20', true);
       if (!options || options === true) options = {trigger: !!options};
 
       // Normalize the fragment.
@@ -1810,9 +1915,11 @@
       if (fragment === '' || fragment.charAt(0) === '?') {
         rootPath = rootPath.slice(0, -1) || '/';
       }
+      // 根路径、路径
       var url = rootPath + fragment;
 
       // Strip the hash and decode for matching.
+      // 
       fragment = this.decodeFragment(fragment.replace(pathStripper, ''));
 
       if (this.fragment === fragment) return;
@@ -1908,6 +2015,7 @@
   };
 
   // Wrap an optional error callback with a fallback error event.
+  // 错误项处理器
   var wrapError = function(model, options) {
     var error = options.error;
     options.error = function(resp) {
